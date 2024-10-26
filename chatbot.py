@@ -1,5 +1,5 @@
 import os
-from openai import OpenAI
+from anthropic import Anthropic
 from dotenv import load_dotenv
 import tkinter as tk
 import pymongo
@@ -9,7 +9,7 @@ load_dotenv()
 
 # Verificar variables de entorno
 print("MONGO_URI presente:", bool(os.getenv("MONGO_URI")))
-print("OPENAI_API_KEY presente:", bool(os.getenv("OPENAI_API_KEY")))
+print("ANTHROPIC_API_KEY presente:", bool(os.getenv("ANTHROPIC_API_KEY")))
 
 # Connect to MongoDB Atlas
 try:
@@ -30,12 +30,12 @@ try:
 except Exception as e:
     print("Error de conexión a MongoDB:", e)
 
-# Connect to OpenAI API
-api_key = os.getenv("OPENAI_API_KEY")
+# Connect to Anthropic API
+api_key = os.getenv("ANTHROPIC_API_KEY")
 if api_key:
-    client = OpenAI(api_key=api_key)
+    anthropic = Anthropic(api_key=api_key)
 else:
-    print("Error: No se encontró la API key de OpenAI")
+    print("Error: No se encontró la API key de Anthropic")
 
 # Flag for controlling the question flow
 seccion_seleccionada = False
@@ -45,15 +45,18 @@ def obtener_resumen_seccion(seccion):
     try:
         documento = coleccion.find_one({})
         if documento and seccion in documento:
-            # Generar un resumen usando ChatGPT
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
+            # Generar un resumen usando Claude
+            message = anthropic.messages.create(
+                model="claude-3-opus-20240229",
+                max_tokens=150,
                 messages=[
-                    {"role": "system", "content": "Resume el siguiente texto en máximo 3 líneas:"},
-                    {"role": "user", "content": documento[seccion]}
+                    {
+                        "role": "user",
+                        "content": f"Resume el siguiente texto en máximo 3 líneas: {documento[seccion]}"
+                    }
                 ]
             )
-            return response.choices[0].message.content
+            return message.content
         return "Sección no encontrada."
     except Exception as e:
         return f"Error al obtener el resumen: {str(e)}"
@@ -67,18 +70,22 @@ def obtener_seccion_completa(seccion):
     except Exception as e:
         return f"Error al obtener la sección: {str(e)}"
 
-def obtener_respuesta_chatgpt(pregunta, contexto):
+def obtener_respuesta_claude(pregunta, contexto):
     try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+        message = anthropic.messages.create(
+            model="claude-3-opus-20240229",
+            max_tokens=1000,
+            system=f"Eres un asistente experto en políticas de capacitación. Responde la siguiente pregunta basándote únicamente en este contexto específico: {contexto}",
             messages=[
-                {"role": "system", "content": f"Eres un asistente experto en políticas de capacitación. Responde la siguiente pregunta basándote únicamente en este contexto específico: {contexto}"},
-                {"role": "user", "content": pregunta}
+                {
+                    "role": "user",
+                    "content": pregunta
+                }
             ]
         )
-        return response.choices[0].message.content
+        return message.content
     except Exception as e:
-        return f"Error al obtener respuesta de ChatGPT: {e}"
+        return f"Error al obtener respuesta de Claude: {e}"
 
 def flujo_preguntas(event=None):
     global seccion_seleccionada, seccion_actual
@@ -129,7 +136,7 @@ def flujo_preguntas(event=None):
     else:
         # Procesar la pregunta del usuario usando el contexto completo
         contexto_completo = obtener_seccion_completa(seccion_actual)
-        respuesta = obtener_respuesta_chatgpt(entrada, contexto_completo)
+        respuesta = obtener_respuesta_claude(entrada, contexto_completo)
         ventana_chat.insert(tk.END, f"\nBot: {respuesta}\n")
         ventana_chat.insert(tk.END, "\nPuedes hacer otra pregunta específica o escribir '7' para volver al menú.\n")
 
